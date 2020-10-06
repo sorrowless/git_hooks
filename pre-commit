@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=$(git hash-object -t tree /dev/null)
+fi
+
+# If you want to allow non-ASCII filenames set this variable to true.
+allownonascii=$(git config --type=bool hooks.allownonascii)
+
+# Redirect output to stderr.
+exec 1>&2
+
+
+# Set Ansible vars and run Ansible checks
+TASK_CHANGED=0
+for file in $(git diff-index --name-only --cached $against); do
+  # For ansible vaulted files ensure they are really vaulted
+  if [[ "$file" =~ ^.*_vault.yml$ ]]; then
+    headline=$(head -n1 "$file")
+    if ! [[ "$headline" =~ ^\$ANSIBLE_VAULT.*$ ]]; then
+      echo "Error: Attempt to add a file which should be vaulted but is not encrypted.
+       Filename is ${file}. Encrypt it and try to repeat commit."
+      exit 1
+    fi
+  # Run linting for ansible tasks
+  elif [[ "$file" =~ ^.*tasks\/.*\.yml$ ]] || [[ "$file" =~ ^.*handlers\/.*\.yml$ ]]; then
+    if (command -v ansible-lint) >/dev/null; then
+      if [[ TASK_CHANGED -eq 0 ]]; then
+        echo "Found changed tasks/handlers Ansible file, schedule ansible-lint execution"
+        TASK_CHANGED=1
+      fi
+    else
+      echo "Ansible linting tool not found, skipping"
+    fi
+  fi
+done
+
+if [[ TASK_CHANGED -ne 0 ]]; then
+  ansible-lint .
+fi
