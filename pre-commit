@@ -19,6 +19,9 @@ exec 1>&2
 # Set Ansible vars and run Ansible checks
 TASK_CHANGED=0
 for file in $(git diff-index --name-only --cached $against); do
+  if ! (stat "$file" 2>/dev/null 1>&2); then
+    continue
+  fi
   # For ansible vaulted files ensure they are really vaulted
   if [[ "$file" =~ ^.*_vault.yml$ ]]; then
     headline=$(head -n1 "$file")
